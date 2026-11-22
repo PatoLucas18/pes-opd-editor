@@ -1,0 +1,14 @@
+# Archivos del juego y copias
+*.bak
+*.opd
+*.obj
+*.img
+*.bin
+# Programa compilado y registros
+*.exe
+*.log
+desktop/EditorOPD.html
+# Sistema / editores
+Thumbs.db
+.DS_Store
+.vscode/

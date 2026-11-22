@@ -1,0 +1,13 @@
+OPD Editor como programa (.exe): Go + WebView2.
+
+Compilar: doble clic en build.bat (necesita Go 1.26 o posterior e Internet la primera vez).
+  - Copia ..\app\EditorOPD.html a esta carpeta y lo incrusta en el exe.
+  - Resultado: ..\app\EditorOPD.exe
+
+Uso: abrir EditorOPD.exe. Se muestra el editor en una ventana propia.
+  - Si junto al exe hay un EditorOPD.html, se usa ese archivo (el editor se actualiza sin recompilar).
+  - Si no, se usa la copia incrustada al compilar.
+  - Requiere Microsoft Edge WebView2 Runtime (Windows 10/11 ya lo trae).
+  - Registro: EditorOPD.log junto al exe. Puertos locales 8791-8799 (solo 127.0.0.1).
+
+"EditorOPD-run.bat" (servidor PowerShell + navegador) funciona igual sin compilar nada.
