@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OPD Editor · scoreboard.bin — v0.1.0-alpha</title>
-<meta name="application-name" content="OPD Editor"><meta name="version" content="0.1.0-alpha">
+<title>OPD Editor · scoreboard.bin — v0.1.1-alpha</title>
+<meta name="application-name" content="OPD Editor"><meta name="version" content="0.1.1-alpha">
 <style>
 :root{
   --bg:#f4f5f7;--panel:#ffffff;--panel2:#eef0f3;--line:#d3d7de;--text:#1d2330;--muted:#5d6678;
@@ -39,7 +39,8 @@ label.chk{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
 .hidden{display:none!important}
 #tree{user-select:none;-webkit-user-select:none}
 #tree details{margin-left:0}
-#tree summary{cursor:pointer;padding:2px 3px;border-radius:4px;display:flex;align-items:center;gap:5px;list-style-position:outside}
+#tree summary{cursor:pointer;padding:2px 3px;border-radius:4px;display:flex;align-items:center;gap:5px;list-style:none}#tree summary::-webkit-details-marker{display:none}
+#tree .tw{flex:none;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;color:var(--mut,#aaa);font-size:17px;line-height:1;cursor:pointer;border-radius:4px}#tree .tw:hover{color:#fff;background:rgba(255,255,255,.12)}#tree .tw::before{content:'\25B8'}#tree details[open]>summary>.tw::before{content:'\25BE'}
 #tree .kids{margin-left:14px;border-left:1px dotted var(--line);padding-left:6px}
 .row{display:flex;align-items:center;gap:5px;padding:2px 4px;border-radius:4px;cursor:pointer}
 .row:hover,#tree summary:hover{background:var(--panel2)}
@@ -144,7 +145,7 @@ h3{background:#3a3a3a;color:#e0e0e0;padding:4px 8px;border-radius:4px;text-trans
 </head>
 <body>
 <div id="top">
-  <h1>OPD Editor · scoreboard.bin <span style="font-weight:400;font-size:12px;opacity:.7">v0.1.0-alpha</span></h1>
+  <h1>OPD Editor · scoreboard.bin <span style="font-weight:400;font-size:12px;opacity:.7">v0.1.1-alpha</span></h1>
   <div class="grp">
     <button id="bDir" class="primary" title="Elegí la carpeta que contiene el .opd y la subcarpeta textures/">Abrir carpeta (OPD + textures)</button>
     <select id="sFolder" class="hidden" title="Marcador (carpeta de GDB\Scoreboards)"></select>
@@ -193,7 +194,6 @@ h3{background:#3a3a3a;color:#e0e0e0;padding:4px 8px;border-radius:4px;text-trans
     <label class="chk"><input type="checkbox" id="cBg" checked> Ver</label>
     <label class="chk">Opacidad <input type="range" id="rBg" min="5" max="100" value="50" style="width:90px"></label>
     <button id="bBgX" class="hidden">Quitar fondo</button>
-    <button id="bModX" class="hidden" title="Solo dentro de Modulos Config, con enter.opd o scoreboard.bin abierto. Revisa si el enter.opd / scoreboard.bin abierto tiene los objetos extra que usa el módulo del marcador (nombres de grupos, estadio, suplentes, escudos de placas, nombres y colores del marcador) y agrega los que faltan">Objetos extra…</button>
     <input type="file" id="fBg" accept="image/*" class="hidden">
   </div>
   <input type="file" id="fDir" webkitdirectory multiple class="hidden">
@@ -610,7 +610,7 @@ function swapSnap(str) {
 function doUndo() { if (!undoS.length) return; const s0 = undoS.pop(); redoS.push(s0.indexOf('"__cfg"') >= 0 ? snapCfg() : snapshot()); swapSnap(s0); }
 function doRedo() { if (!redoS.length) return; const s0 = redoS.pop(); undoS.push(s0.indexOf('"__cfg"') >= 0 ? snapCfg() : snapshot()); swapSnap(s0); }
 function afterDocSwap() { vsel.clear(); pruneMsel(); if (sel && !target(sel)) sel = null; buildTree(); buildScenes(); buildTexs(); buildMisc(); renderDetail(); updBtns(); redraw(); }
-function updBtns() { { const bx = $('bModX'); if (bx) bx.classList.toggle('hidden', !(typeof modExtrasVisible === 'function' && modExtrasVisible())); } $('bUndo').disabled = !undoS.length; $('bRedo').disabled = !redoS.length; $('bSave').disabled = !doc; $('bSaveAs').classList.toggle('hidden', !curHandle); }
+function updBtns() { $('bUndo').disabled = !undoS.length; $('bRedo').disabled = !redoS.length; $('bSave').disabled = !doc; $('bSaveAs').classList.toggle('hidden', !curHandle); }
 function target(s) {
   if (!doc || !s) return null; const b = doc.blocks[s.b]; if (!b) return null;
   if (s.t === 'block') return b;
@@ -916,6 +916,7 @@ function statusDoc() {
 
 // ---------- árbol ----------
 function blockLabel(b, i) { const n = cfgBlockName(i); return n ? n + ' (bloque ' + i + ')' : 'Bloque ' + i; }   // Block.<n>.name del cfg
+const openCats = new Set();   // categorías (Texturas / Textos / Iconos de un bloque) que el usuario abrió: se recuerdan al reconstruir el árbol (por defecto todo contraído)
 function buildTree() {
   const root = $('tree'); const st = root.parentElement.scrollTop; root.innerHTML = '';
   if (!doc) return;
@@ -923,14 +924,15 @@ function buildTree() {
     const det = el('details', { 'data-b': bi }); if (openBlocks.has(bi)) det.open = true;
     det.addEventListener('toggle', () => { det.open ? openBlocks.add(bi) : openBlocks.delete(bi); });
     const sm = el('summary', { 'data-sel': 'block:' + bi + ':0' },
-      chk('b:' + bi, b.vis), el('span', { text: blockLabel(b, bi) }),
+      el('span', { class: 'tw', title: 'Expandir / contraer (Mayús: también los hijos)' }), chk('b:' + bi, b.vis), el('span', { text: blockLabel(b, bi) }),
       el('span', { class: 'k', text: b.textures.length + 'T ' + b.texts.length + 'X ' + b.icons.length + 'I' }));
     det.append(sm);
     const kids = el('div', { class: 'kids' });
     const cat = (key, title, arr, flag, kind, lab) => {
       if (!arr.length) return;
-      const d2 = el('details', { open: '' });
-      d2.append(el('summary', null, chk(key + ':' + bi, flag), el('span', { text: title + ' (' + arr.length + ')' })));
+      const d2 = el('details'); if (openCats.has(key + ':' + bi)) d2.open = true;
+      d2.addEventListener('toggle', () => { d2.open ? openCats.add(key + ':' + bi) : openCats.delete(key + ':' + bi); });
+      d2.append(el('summary', { 'data-sel': 'cat:' + bi + ':' + ({ bt: 'textures', bx: 'texts', bi: 'icons' })[key] }, el('span', { class: 'tw', title: 'Expandir / contraer' }), chk(key + ':' + bi, flag), el('span', { text: title + ' (' + arr.length + ')' })));
       const k2 = el('div', { class: 'kids' });
       arr.forEach((o, j) => {
         const canDrag = kind === 'tex' && arr.length > 1;
@@ -1042,6 +1044,7 @@ function markSel() {
   document.querySelectorAll('#tree .sel').forEach(n => n.classList.remove('sel'));
   for (const k of msel) { const n = document.querySelector('#tree [data-sel="' + k + '"]'); if (n) n.classList.add('sel'); }
   if (!sel) return; const k = sel.t + ':' + sel.b + ':' + (sel.t === 'block' ? 0 : sel.i);
+  if (sel.t === 'block' && sel.cat) { const c = document.querySelector('#tree [data-sel="cat:' + sel.b + ':' + sel.cat + '"]'); if (c) c.classList.add('sel'); return; }   // categoría elegida: se marca ella y no el bloque
   const n = document.querySelector('#tree [data-sel="' + k + '"]'); if (n) { n.classList.add('sel'); if (sel.t === 'block') { /* nada */ } }
 }
 $('tree').addEventListener('click', e => {
@@ -1050,8 +1053,16 @@ $('tree').addEventListener('click', e => {
     if (e.detail === 0) applyVisBox(t); else e.preventDefault();   // clic normal: lo aplicó mousedown (arrastre); teclado (detail 0) aplica aquí
     e.stopPropagation(); return;
   }
+  const tw = t.closest && t.closest('.tw');
+  if (tw) {   // flecha: expandir / contraer (con Mayús también todos los hijos)
+    e.preventDefault(); e.stopPropagation(); const d = tw.closest('details'); d.open = !d.open;
+    if (e.shiftKey) d.querySelectorAll('details').forEach(x => { x.open = d.open; });
+    return;
+  }
+  if (t.closest && t.closest('summary') && e.detail > 0) e.preventDefault();   // clic en el nombre: solo selecciona; la flecha es la que abre / cierra
   const s = t.closest && t.closest('[data-sel]'); if (!s) return;
   const [kind, b, i] = s.getAttribute('data-sel').split(':'), cur = { t: kind, b: +b, i: +i };
+  if (kind === 'cat') { selAnchor = null; selectObj({ t: 'block', b: +b, i: 0, cat: i }); return; }   // nombre de una categoría: selecciona (exportar / importar / borrar de ese tipo)
   if (kind !== 'block' && (e.shiftKey || e.ctrlKey || e.metaKey)) {
     if (e.shiftKey && selAnchor && selAnchor.t === kind && selAnchor.b === +b) {   // rango como en Windows: del ancla hasta el clic (Ctrl+Shift suma al rango)
       if (!e.ctrlKey && !e.metaKey) msel.clear();
@@ -1168,7 +1179,7 @@ function vExtrude() {
 }
 
 function selectObj(s, mode) {   // mode: undefined = reemplaza la selección · 'toggle' = suma/quita (Ctrl/Shift) · 'add' = suma
-  if (!s || !sel || s.t !== sel.t || s.b !== sel.b || s.i !== sel.i) vsel.clear();
+  if (!s || !sel || s.t !== sel.t || s.b !== sel.b || s.i !== sel.i || s.cat !== sel.cat) vsel.clear();
   if (!s || s.t === 'block') msel.clear();
   else if (mode === 'toggle') {
     const k = mkey(s);
@@ -1176,6 +1187,10 @@ function selectObj(s, mode) {   // mode: undefined = reemplaza la selección · 
     else msel.add(k);
   } else if (mode === 'add') msel.add(mkey(s));
   else { msel.clear(); msel.add(mkey(s)); }
+  if (s && s.t !== 'block') {   // un objeto elegido (en el lienzo o al agregarlo) abre su bloque y su categoría para que se vea en la lista
+    openBlocks.add(s.b); openCats.add({ tex: 'bt', text: 'bx', icon: 'bi' }[s.t] + ':' + s.b);
+    const nd = document.querySelector('#tree [data-sel="' + mkey(s) + '"]'); for (let dd = nd && nd.closest('details'); dd; dd = dd.parentElement && dd.parentElement.closest('details')) dd.open = true;
+  }
   sel = s; curVert = 0; markSel(); renderDetail(); redraw(); drawUV();
   const n = document.querySelector('#tree .sel'); if (n) n.scrollIntoView({ block: 'nearest' });
 }
@@ -1445,7 +1460,7 @@ async function impDo(kinds) {
   status('Importado en bloque ' + sel.b + (add ? ' (agregando)' : keep ? ' (reemplazando, IDs del bloque)' : ' (reemplazando)') + ': ' + res.join('; ') + '. Ctrl+Z para deshacer.');
 }
 let impAdd = false, impKeepIds = false;   // opciones de importación (se mantienen mientras el editor está abierto)
-function expImpPanel(d) {
+function expImpPanel(d, only) {   // only = 'textures' | 'texts' | 'icons': solo ese tipo (selección de una categoría)
   d.append(el('h3', { text: 'Exportar / Importar' }));
   d.append(el('p', { class: 'note', text: 'Trabaja sobre el bloque seleccionado y guarda un .json. Al importar, en el bloque queda solo lo importado (se reemplaza lo que había de ese tipo), salvo que marques una de las opciones.' }));
   const cA = el('input', { type: 'checkbox' }), cK = el('input', { type: 'checkbox' }); cA.checked = impAdd; cK.checked = impKeepIds;
@@ -1455,26 +1470,41 @@ function expImpPanel(d) {
   d.append(el('br'));
   d.append(el('label', { class: 'chk', title: 'Solo textos e iconos. Reemplaza, pero por orden cada objeto importado toma el ID del que ya estaba en esa posición del bloque. Si el archivo trae más objetos que el bloque, los de más entran con el ID del archivo.' }, cK, ' Conservar los IDs del bloque (textos e iconos, por orden)'));
   const g = el('div'); g.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:6px';
-  for (const [kinds, lbl] of [[['textures'], 'texturas'], [['texts'], 'strings'], [['icons'], 'iconos'], [['textures', 'texts', 'icons'], 'todo']]) {
+  for (const [kinds, lbl] of [[['textures'], 'texturas'], [['texts'], 'strings'], [['icons'], 'iconos'], [['textures', 'texts', 'icons'], 'todo']].filter(x => !only || (x[0].length === 1 && x[0][0] === only))) {
     g.append(el('button', { text: 'Exportar ' + lbl, onclick: () => expDo(kinds) }), el('button', { text: 'Importar ' + lbl, onclick: () => impDo(kinds) }));
   }
   d.append(g);
   const bb = doc.blocks[sel.b];
   d.append(el('h3', { text: 'Activos (checkbox tildado)' }));
   d.append(el('p', { class: 'note', text: 'Activos = los objetos con el checkbox tildado en la lista (los que se ven en el editor). "Dejar solo activos" borra los destildados; "Borrar activos" borra los tildados; "Exportar activos" guarda solo los tildados.' }));
-  for (const [kinds, lbl] of [[['textures'], 'Texturas'], [['texts'], 'Strings'], [['icons'], 'Iconos'], [['textures', 'texts', 'icons'], 'Todo']]) {
+  for (const [kinds, lbl] of [[['textures'], 'Texturas'], [['texts'], 'Strings'], [['icons'], 'Iconos'], [['textures', 'texts', 'icons'], 'Todo']].filter(x => !only || (x[0].length === 1 && x[0][0] === only))) {
     const na = kinds.reduce((a, k) => a + bb[k].filter(o => isActive(bb, k, o)).length, 0), nt = kinds.reduce((a, k) => a + bb[k].length, 0);
     d.append(el('div', { class: 'note' }, el('b', { text: lbl + ': ' + na + ' activos de ' + nt })));
     const g3 = el('div'); g3.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px';
     g3.append(el('button', { text: 'Dejar solo activos', onclick: () => bulkDo(kinds, 'keep') }), el('button', { text: 'Borrar activos', onclick: () => bulkDo(kinds, 'del') }), el('button', { text: 'Exportar activos', onclick: () => expDo(kinds, 'active') }));
     d.append(g3);
   }
-  if (msel.size) {
+  if (msel.size && !only) {
     d.append(el('h3', { text: 'Seleccionados (' + msel.size + ')' }));
     const g4 = el('div'); g4.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:6px';
     g4.append(el('button', { text: 'Exportar seleccionados', onclick: () => expDo(['textures', 'texts', 'icons'], 'sel') }), ...($('cNew').checked ? [el('button', { text: 'Borrar seleccionados (Supr)', onclick: delMany })] : []));
     d.append(g4);
   }
+}
+function delAllKind(k) {   // borra todas las texturas / textos / iconos del bloque seleccionado
+  if (!doc || !sel) return; const b = doc.blocks[sel.b], n = b[k].length;
+  if (!n) { status('El bloque ' + sel.b + ' no tiene ' + EXP_LBL[k] + '.'); return; }
+  if (!confirm('Se borran las ' + n + ' ' + EXP_LBL[k] + ' del bloque ' + sel.b + '. Se puede deshacer con Ctrl+Z. ¿Continuar?')) return;
+  pushUndo(); b[k] = []; msel.clear(); selAnchor = null; vsel.clear();
+  afterDocSwap(); markSel(); statusDoc(); status('Bloque ' + sel.b + ': borradas las ' + n + ' ' + EXP_LBL[k] + '. Ctrl+Z para deshacer.');
+}
+function catPanel(d, b) {   // detalle cuando se toca el nombre de una categoría (Texturas / Textos / Iconos) del bloque
+  const k = sel.cat, lbl = { textures: 'Texturas', texts: 'Textos', icons: 'Iconos' }[k];
+  d.append(el('h3', { text: lbl + ' del bloque ' + sel.b + ' (' + b[k].length + ')' }));
+  d.append(el('p', { class: 'note', text: 'Acá se exportan, importan o borran solo las ' + EXP_LBL[k] + ' de este bloque. Para editar una en particular, tocala en la lista.' }));
+  expImpPanel(d, k);
+  d.append(el('h3', { text: 'Borrar' }));
+  d.append(el('button', { text: 'Borrar todas las ' + EXP_LBL[k] + ' (' + b[k].length + ')', onclick: () => delAllKind(k), ...(b[k].length ? {} : { disabled: '' }) }));
 }
 function renderDetail() {
   const d = $('detail'); d.innerHTML = ''; const o = target(sel);
@@ -1488,6 +1518,7 @@ function renderDetail() {
     d.append(mp, mb);
   }
   d.append(el('h3', { text: ({ block: 'Bloque ', tex: 'Textura ', text: 'Texto ', icon: 'Icono ' })[sel.t] + (sel.t === 'block' ? sel.b + (cfgBlockName(sel.b) ? ' · ' + cfgBlockName(sel.b) : '') : '#' + sel.i + ' (bloque ' + sel.b + (cfgBlockName(sel.b) ? ' · ' + cfgBlockName(sel.b) : '') + ')') }));
+  if (sel.t === 'block' && sel.cat) { catPanel(d, b); return; }
   const U = { units: true };
   const BIN = doc.fmt === 'bin';
   if (sel.t === 'block') {
@@ -2570,130 +2601,6 @@ const saveLay = () => prefSave({ lay });
 $('bPl').onclick = () => { lay.hl = !lay.hl; applyLay(); saveLay(); };
 $('bPr').onclick = () => { lay.hr = !lay.hr; applyLay(); saveLay(); };
 $('bLay').onclick = () => { lay = Object.assign({}, LAY0); applyLay(); saveLay(); };
-// ---- Objetos extra del módulo (scoreboard_mod): opcionales; si faltan, el juego funciona como siempre ----
-// Plantillas tomadas de "LaLiga 2018 - V2" (posiciones de ese marcador: se ajustan después en el editor).
-// enter.opd: se agregan en TODOS los bloques (variantes) de la escena, porque al cambiar de variante el juego descarta los textos cuyo id no está
-// en el bloque nuevo (FUN_0095C990). scoreboard.bin: por bloque (0 placa local, 1 placa visitante, 2 marcador).
-const MOD_EXTRAS = {"enter": [{"label": "Tabla de grupos: nombres de equipo (textos 200-203)", "scene": 1, "kind": "texts", "items": [{"Unk1": 1, "FontIndex": 1, "Alignment": 17, "Unk4": 0, "PositionX": -1887, "PositionY": -739, "Overlap": -200, "Width": 1024, "Height": 256, "StyleMode": 0, "ColorIndex": 0, "ID": 200, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 1, "Alignment": 17, "Unk4": 0, "PositionX": -1882, "PositionY": -307, "Overlap": -200, "Width": 1024, "Height": 256, "StyleMode": 0, "ColorIndex": 0, "ID": 201, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 1, "Alignment": 17, "Unk4": 0, "PositionX": -1887, "PositionY": 113, "Overlap": -200, "Width": 1024, "Height": 256, "StyleMode": 0, "ColorIndex": 0, "ID": 202, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 1, "Alignment": 17, "Unk4": 0, "PositionX": -1898, "PositionY": 576, "Overlap": -200, "Width": 1024, "Height": 256, "StyleMode": 0, "ColorIndex": 0, "ID": 203, "ID2": 0, "StringID": 1, "BlockID": 103}]}, {"label": "Presentación VS: nombre del estadio (texto 139)", "scene": 4, "kind": "texts", "items": [{"Unk1": 1, "FontIndex": 0, "Alignment": 25, "Unk4": 0, "PositionX": -2710, "PositionY": 1440, "Overlap": -100, "Width": 1152, "Height": 194, "StyleMode": 0, "ColorIndex": 0, "ID": 139, "ID2": 1, "StringID": 1, "BlockID": 103}]}, {"label": "Alineación local: suplentes, dorsales 205-216 y nombres 217-228", "scene": 10, "kind": "texts", "items": [{"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2083, "PositionY": -1595, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 205, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2083, "PositionY": -1341, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 206, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2083, "PositionY": -1087, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 207, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2083, "PositionY": -833, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 208, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2083, "PositionY": -579, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 209, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2083, "PositionY": -325, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 210, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2083, "PositionY": -71, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 211, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2083, "PositionY": 183, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 212, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2083, "PositionY": 437, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 213, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2083, "PositionY": 691, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 214, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2083, "PositionY": 945, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 215, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2083, "PositionY": 1199, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 7, "ID": 216, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 26, "Unk4": 0, "PositionX": 2393, "PositionY": -1595, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 11, "ID": 217, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2393, "PositionY": -1341, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 218, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2393, "PositionY": -1087, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 219, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2393, "PositionY": -833, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 220, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2393, "PositionY": -579, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 221, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2393, "PositionY": -325, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 222, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2393, "PositionY": -71, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 223, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2393, "PositionY": 183, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 224, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2393, "PositionY": 437, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 225, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2393, "PositionY": 691, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 226, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2393, "PositionY": 945, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 227, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2393, "PositionY": 1199, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 228, "ID2": 0, "StringID": 1, "BlockID": 103}]}, {"label": "Alineación visitante: suplentes, dorsales 205-216 y nombres 217-228", "scene": 11, "kind": "texts", "items": [{"Unk1": 1, "FontIndex": 0, "Alignment": 25, "Unk4": 0, "PositionX": 2083, "PositionY": -1595, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 205, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 25, "Unk4": 0, "PositionX": 2083, "PositionY": -1341, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 206, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 25, "Unk4": 0, "PositionX": 2083, "PositionY": -1087, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 207, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 25, "Unk4": 0, "PositionX": 2083, "PositionY": -833, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 208, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 25, "Unk4": 0, "PositionX": 2083, "PositionY": -579, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 209, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 25, "Unk4": 0, "PositionX": 2083, "PositionY": -325, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 210, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 25, "Unk4": 0, "PositionX": 2083, "PositionY": -71, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 211, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 25, "Unk4": 0, "PositionX": 2083, "PositionY": 183, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 212, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 25, "Unk4": 0, "PositionX": 2083, "PositionY": 437, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 213, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 25, "Unk4": 0, "PositionX": 2083, "PositionY": 691, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 214, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 25, "Unk4": 0, "PositionX": 2083, "PositionY": 945, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 215, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 25, "Unk4": 0, "PositionX": 2083, "PositionY": 1199, "Overlap": -100, "Width": 310, "Height": 254, "StyleMode": 0, "ColorIndex": 7, "ID": 216, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2393, "PositionY": -1595, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 11, "ID": 217, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2393, "PositionY": -1341, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 218, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2393, "PositionY": -1087, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 219, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2393, "PositionY": -833, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 220, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2393, "PositionY": -579, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 221, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2393, "PositionY": -325, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 222, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2393, "PositionY": -71, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 223, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2393, "PositionY": 183, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 224, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2393, "PositionY": 437, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 225, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2393, "PositionY": 691, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 226, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2393, "PositionY": 945, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 227, "ID2": 0, "StringID": 1, "BlockID": 103}, {"Unk1": 1, "FontIndex": 0, "Alignment": 24, "Unk4": 0, "PositionX": 2393, "PositionY": 1199, "Overlap": -100, "Width": 1907, "Height": 254, "StyleMode": 0, "ColorIndex": 0, "ID": 228, "ID2": 0, "StringID": 1, "BlockID": 103}]}], "scoreboard": [{"label": "Placa de nombre local: escudo (icono 10)", "block": 0, "kind": "icons", "items": [{"Unk1": 2, "Unk2": 0, "ID": 10, "PositionX": -3751, "PositionY": 1859, "Overlap": 0, "Width": 510, "Height": 510}]}, {"label": "Placa de nombre visitante: escudo (icono 10)", "block": 1, "kind": "icons", "items": [{"Unk1": 2, "Unk2": 0, "ID": 10, "PositionX": 3264, "PositionY": 1754, "Overlap": 0, "Width": 512, "Height": 512}]}, {"label": "Marcador: nombres de equipo (iconos 10 local, 11 visitante)", "block": 2, "kind": "icons", "items": [{"Unk1": 2, "Unk2": 0, "ID": 10, "PositionX": -2777, "PositionY": -2762, "Overlap": 0, "Width": 512, "Height": 512}, {"Unk1": 2, "Unk2": 0, "ID": 11, "PositionX": -1785, "PositionY": -2759, "Overlap": 0, "Width": 512, "Height": 512}]}, {"label": "Marcador: colores de camiseta (iconos 12 local, 13 visitante)", "block": 2, "kind": "icons", "items": [{"Unk1": 2, "Unk2": 0, "ID": 12, "PositionX": -2784, "PositionY": -2026, "Overlap": 0, "Width": 512, "Height": 512}, {"Unk1": 2, "Unk2": 0, "ID": 13, "PositionX": -1817, "PositionY": -2026, "Overlap": 0, "Width": 512, "Height": 512}]}]};
-// Lista de jugadores de la entrada (escenas 8 local / 9 visitante): titulares y suplentes como TEXTOS (el módulo los llena y oculta el icono de esa fila).
-// Las posiciones se calculan al agregar: titulares sobre los iconos originales (nombres 50.. / 84.., dorsales 39.. / 73..), suplentes en una columna a la derecha.
-(function () {
-  const T = (id, al) => ({ Unk1: 1, FontIndex: 0, Alignment: al, Unk4: 0, PositionX: 0, PositionY: 0, Overlap: -100, Width: 512, Height: 256, StyleMode: 0, ColorIndex: 0, ID: id, ID2: 0, StringID: 1, BlockID: 103 });
-  [[8, 'local', 50, 39], [9, 'visitante', 84, 73]].forEach(([sc, nm, nameIco, numIco]) => {
-    const st = [], su = [];
-    for (let i = 0; i < 11; i++) { st.push(T(229 + i, 24)); st.push(T(240 + i, 25)); }
-    for (let k = 0; k < 12; k++) { su.push(T(205 + k, 25)); su.push(T(217 + k, 24)); }
-    MOD_EXTRAS.enter.push({ label: 'Lista de jugadores ' + nm + ': titulares como texto, nombres 229-239 y dorsales 240-250 (sobre los iconos originales)', scene: sc, kind: 'texts', items: st, listPlace: { nameIco, numIco, subs: false } });
-    MOD_EXTRAS.enter.push({ label: 'Lista de jugadores ' + nm + ': suplentes, dorsales 205-216 y nombres 217-228 (columna a la derecha de los titulares)', scene: sc, kind: 'texts', items: su, listPlace: { nameIco, numIco, subs: true } });
-  });
-  // placa de alineaciones (escena / bloque 13): el modulo la copia en cada titular, junto a sus iconos 120-122
-  MOD_EXTRAS.enter.push({ label: 'Placa de alineaciones (escena 13): dorsal 252 y nombre 253 de cada titular (en lugar de los iconos 140 / 122)', scene: 13, kind: 'texts', items: [Object.assign(T(252, 25), { StringID: 0, BlockID: 0 }), Object.assign(T(253, 24), { StringID: 0, BlockID: 0, ColorIndex: 1 })], platePlace: true });
-})();
-// posición inicial de los textos 252/253 de la placa: el dorsal en el lado izquierdo de la placa (icono 121) y el nombre sobre el icono 122
-function modExtrasPlatePlace(o, blk) {
-  const ico = id => (blk.icons || []).find(x => x.ID === id);
-  const p = ico(121), n = ico(122);
-  if (!p && !n) return;
-  const r = p || n, h = (n && n.Height) || r.Height || 256;
-  const y = n ? n.PositionY : r.PositionY + Math.round(((r.Height || h) - h) / 2);
-  const ov = (n && n.Overlap) || r.Overlap; if (ov) o.Overlap = ov - 10;   // un poco mas cerca que la placa
-  if (o.ID === 252) { o.PositionX = r.PositionX; o.PositionY = y; o.Width = Math.max(128, Math.min(h, 320)); o.Height = h; }
-  else {
-    const dw = Math.max(128, Math.min(h, 320));
-    if (n && n.PositionX >= r.PositionX + dw) { o.PositionX = n.PositionX; o.Width = n.Width || 1024; }
-    else { o.PositionX = r.PositionX + dw; o.Width = Math.max(256, (r.PositionX + (r.Width || 1024)) - o.PositionX); }
-    o.PositionY = y; o.Height = h;
-  }
-}
-// posición de un texto de la lista según los iconos del bloque: titulares sobre el icono de su fila; suplentes en otra columna a la derecha
-function modExtrasListPlace(o, blk, lp) {
-  const ico = id => (blk.icons || []).find(x => x.ID === id);
-  const n0 = ico(lp.nameIco), d0 = ico(lp.numIco), n1 = ico(lp.nameIco + 1);
-  const put = (r, al) => { if (!r) return; o.PositionX = r.PositionX; o.PositionY = r.PositionY; o.Width = r.Width || o.Width; o.Height = r.Height || o.Height; if (r.Overlap) o.Overlap = r.Overlap; if (al != null) o.Alignment = al; };
-  const id = o.ID;
-  if (!lp.subs) {
-    if (id >= 229 && id <= 239) put(ico(lp.nameIco + id - 229) || n0);
-    else if (id >= 240 && id <= 250) put(ico(lp.numIco + id - 240) || d0);
-    return;
-  }
-  if (!n0) return;
-  // caja de todos los iconos de titulares (la lista puede estar en una o dos columnas)
-  const ids = []; for (let i = 0; i < 11; i++) ids.push(lp.nameIco + i, lp.numIco + i);
-  const all = ids.map(ico).filter(Boolean);
-  const minX = Math.min(...all.map(r => r.PositionX)), maxX = Math.max(...all.map(r => r.PositionX + (r.Width || 0)));
-  const dw = d0 ? (d0.Width || 256) : 256, nw = n0.Width || 1024, gap = 64, colW = dw + gap + nw;
-  let step = n1 && n1.PositionY !== n0.PositionY ? Math.abs(n1.PositionY - n0.PositionY) : (n0.Height || 256) + 32;
-  const y0 = Math.min(...all.map(r => r.PositionY));
-  if (y0 + 11 * step + (n0.Height || 0) > 3584) step = Math.max(n0.Height || 128, Math.floor((3584 - (n0.Height || 0) - y0) / 11));   // que entren las 12 filas en pantalla
-  let colX = maxX + gap * 2;
-  if (colX + colW > 4096) colX = Math.max(-4096, minX - gap * 2 - colW);   // sin lugar a la derecha: a la izquierda de la lista
-  const row = id >= 217 ? id - 217 : id - 205;
-  o.PositionY = y0 + row * step; o.Height = n0.Height || o.Height; if (n0.Overlap) o.Overlap = n0.Overlap;
-  if (id < 217) { o.PositionX = colX; o.Width = dw; }
-  else { o.PositionX = colX + dw + gap; o.Width = nw; }
-}
-function modExtrasKind() {
-  if (!doc) return null;
-  const n = (fname || '').toLowerCase();
-  if (doc.fmt === 'bin') return /pk/.test(n) ? null : 'scoreboard';
-  return /enter/.test(n) ? 'enter' : null;
-}
-// solo cuando el editor lo abrió Modulos Config (su ventana tiene SSX: dentro del panel o en "Ventana aparte") y hay un enter.opd / scoreboard.bin abierto
-function modExtrasHost() { try { const h = window.parent !== window ? window.parent : window.opener; return !!(h && h !== window && h.SSX); } catch (e) { return false; } }
-function modExtrasVisible() { return modExtrasHost() && !!modExtrasKind(); }
-function modExtrasCheck() {   // [{g, blocks:[{b, missing:[ids]}], noScene}]
-  const kind = modExtrasKind(); if (!kind) return null;
-  return MOD_EXTRAS[kind].map(g => {
-    let bl = [];
-    if (g.scene != null) { const sc = doc.scenes && doc.scenes[g.scene]; if (!sc) return { g, blocks: [], noScene: true }; bl = sc.blocks.map(e => e.BlockIndex); }
-    else bl = [g.block];
-    const blocks = bl.filter(b => doc.blocks[b]).map(b => { const have = new Set(doc.blocks[b][g.kind].map(o => o.ID)); return { b, missing: g.items.map(o => o.ID).filter(id => !have.has(id)) }; });
-    return { g, blocks, noScene: false };
-  });
-}
-function modExtrasAdd(groups) {   // agrega lo que falta de los grupos elegidos; devuelve cuantos objetos agrego
-  pushUndo(); let n = 0;
-  for (const r of groups) for (const bk of r.blocks) for (const id of bk.missing) {
-    const t = r.g.items.find(o => o.ID === id); if (!t) continue;
-    const o = Object.assign({}, t); o.vis = true; if (r.g.listPlace) modExtrasListPlace(o, doc.blocks[bk.b], r.g.listPlace); if (r.g.platePlace) modExtrasPlatePlace(o, doc.blocks[bk.b]); doc.blocks[bk.b][r.g.kind].push(o); n++;
-  }
-  if (n) { afterDocSwap(); statusDoc(); try { render(); } catch (e) {} }
-  return n;
-}
-function modExtrasDialog() {
-  const kind = modExtrasKind();
-  if (!kind || !modExtrasHost()) { const m = 'Los objetos extra del módulo (scoreboard.dll) solo se revisan desde Modulos Config, con el enter.opd o el scoreboard.bin del marcador abierto.'; status(m, true); alert(m); return; }
-  const old = document.getElementById('modExtrasDlg'); if (old) old.remove();
-  const ov = el('div', { id: 'modExtrasDlg' }); ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center';
-  const box = el('div'); box.style.cssText = 'background:var(--panel,#1e2430);color:inherit;border:1px solid #3c4658;border-radius:8px;padding:16px 18px;max-width:640px;width:92vw;max-height:84vh;overflow:auto';
-  ov.append(box); document.body.append(ov);
-  const draw = () => {
-    box.textContent = '';
-    box.append(el('h3', { text: 'Objetos extra del módulo · ' + (kind === 'enter' ? 'enter.opd' : 'scoreboard.bin') }));
-    box.append(el('p', { class: 'note', text: 'Estos objetos solo los usa el módulo del marcador (scoreboard.dll de kitserver6): el juego sin el módulo los ignora. Solo existen para enter.opd y scoreboard.bin.' }));
-    box.append(el('p', { class: 'note', text: 'Son opcionales: si no están, todo funciona como antes. Se agregan con las posiciones de "LaLiga 2018 - V2"; después se acomodan en el editor y se guarda el archivo.' + (kind === 'enter' ? ' En enter.opd se agregan en todas las variantes (bloques) de cada escena.' : '') }));
-    const res = modExtrasCheck(), chks = [];
-    for (const r of res) {
-      const miss = r.blocks.reduce((a, b) => a + b.missing.length, 0), tot = r.blocks.length * r.g.items.length;
-      const st = r.noScene ? 'el OPD no tiene la escena ' + r.g.scene : !r.blocks.length ? 'el archivo no tiene el bloque ' + r.g.block
-        : miss === 0 ? 'completo' : 'faltan ' + miss + ' de ' + tot + ' (' + r.blocks.filter(b => b.missing.length).map(b => 'bloque ' + b.b + ': ' + (b.missing.length === r.g.items.length ? 'todos' : b.missing.join(', '))).join(' · ') + ')';
-      const c = el('input', { type: 'checkbox' }); c.checked = miss > 0; c.disabled = !miss; chks.push([c, r]);
-      const where = r.g.scene != null ? 'escena ' + r.g.scene + (r.blocks.length ? ' (bloques ' + r.blocks.map(b => b.b).join(', ') + ')' : '') : 'bloque ' + r.g.block;
-      const row = el('label', { class: 'chk' }, c, ' ', el('b', { text: r.g.label }), el('br'), el('span', { class: 'note', text: where + ' · ' + st }));
-      row.style.cssText = 'display:block;margin:8px 0'; if (!miss) row.style.opacity = '.7';
-      box.append(row);
-    }
-    const bAdd = el('button', { text: 'Agregar lo que falta (marcados)' }), bClose = el('button', { text: 'Cerrar' });
-    bAdd.disabled = !chks.some(([c]) => c.checked && !c.disabled);
-    chks.forEach(([c]) => c.addEventListener('change', () => { bAdd.disabled = !chks.some(([c2]) => c2.checked && !c2.disabled); }));
-    bAdd.onclick = () => { const n = modExtrasAdd(chks.filter(([c]) => c.checked && !c.disabled).map(([, r]) => r)); status(n ? 'Objetos extra: agregados ' + n + ' objetos. Ctrl+Z para deshacer; Guardar para escribir el archivo.' : 'Objetos extra: no faltaba nada.'); draw(); };
-    bClose.onclick = () => ov.remove();
-    const bar = el('div'); bar.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:12px'; bar.append(bAdd, bClose); box.append(bar);
-  };
-  draw();
-  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
-}
-$('bModX').onclick = modExtrasDialog;
 
 function bindSpl(id, side) {
   const s = $(id);

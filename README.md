@@ -1,6 +1,6 @@
 # OPD Editor
 
-Editor de los gráficos 2D de **PES 6** (`enter.opd`, `game2d.opd`, `scoreboard.bin`, `pk.opd`). Estado: **v0.1.0-alpha**.
+Editor de los gráficos 2D de **PES 6** (`enter.opd`, `game2d.opd`, `scoreboard.bin`, `pk.opd`). Estado: **v0.1.1-alpha**.
 
 Es una sola página HTML sin dependencias, con un servidor local opcional (PowerShell) y un programa de escritorio opcional (Go + WebView2).
 
